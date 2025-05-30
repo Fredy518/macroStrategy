@@ -898,4 +898,308 @@ class MultiSignalBacktestEngine:
             'strategy_shares_asset2': strategy_shares_asset2,
             'benchmark_shares_asset1': benchmark_shares_asset1,
             'benchmark_shares_asset2': benchmark_shares_asset2
+        }
+
+    def run_voting_backtest_proportional(self,
+                                        voting_decisions: pd.DataFrame,
+                                        price_data: pd.DataFrame,
+                                        strategy_type: str,
+                                        start_date: str = '2013-01-01',
+                                        end_date: str = '2025-05-27') -> Dict:
+        """
+        运行按投票比例分配的多信号投票回测
+        
+        参数:
+            voting_decisions: 投票决策数据
+            price_data: 价格数据
+            strategy_type: 策略类型
+            start_date: 回测开始日期
+            end_date: 回测结束日期
+            
+        返回:
+            回测结果字典
+        """
+        print(f"\n=== {strategy_type} 多信号投票回测 (按比例分配) ===")
+        print(f"回测期间: {start_date} -> {end_date}")
+        
+        # 确定目标列
+        if strategy_type == 'value_growth':
+            target_col1, target_col2 = 'ValueR', 'GrowthR'
+            asset1_name, asset2_name = 'Value', 'Growth'
+        elif strategy_type == 'big_small':
+            target_col1, target_col2 = 'BigR', 'SmallR'
+            asset1_name, asset2_name = 'Big', 'Small'
+        else:
+            raise ValueError(f"不支持的策略类型: {strategy_type}")
+        
+        # 检查价格数据
+        required_cols = [target_col1, target_col2]
+        missing_cols = [col for col in required_cols if col not in price_data.columns]
+        if missing_cols:
+            raise ValueError(f"价格数据缺少必要的列: {missing_cols}")
+        
+        # 过滤时间范围
+        start_ts = pd.Timestamp(start_date)
+        end_ts = pd.Timestamp(end_date)
+        
+        price_data_filtered = price_data.loc[start_ts:end_ts].copy()
+        if price_data_filtered.empty:
+            raise ValueError("指定时间范围内没有价格数据")
+        
+        # 生成按比例分配的交易信号
+        trading_signals = []
+        
+        for decision_date, decision_data in voting_decisions.iterrows():
+            # 根据T-2月的信号，在T月第一个交易日调仓
+            target_year = decision_date.year
+            target_month = decision_date.month + 2
+            
+            # 处理跨年
+            if target_month > 12:
+                target_month -= 12
+                target_year += 1
+            
+            # 找到目标月份的第一个交易日
+            target_month_start = pd.Timestamp(target_year, target_month, 1)
+            available_trading_dates = price_data_filtered.index[price_data_filtered.index >= target_month_start]
+            
+            # 如果没有可用的交易日期（如最新信号），设置为None
+            if len(available_trading_dates) == 0:
+                trading_date = None
+            else:
+                trading_date = available_trading_dates[0]
+            
+            # 计算投票比例
+            if strategy_type == 'value_growth':
+                votes_asset1 = decision_data['value_votes']  # 价值票数
+                votes_asset2 = decision_data['growth_votes']  # 成长票数
+            elif strategy_type == 'big_small':
+                votes_asset1 = decision_data['big_votes']  # 大盘票数
+                votes_asset2 = decision_data['small_votes']  # 小盘票数
+            
+            total_votes = votes_asset1 + votes_asset2
+            weight_asset1 = votes_asset1 / total_votes if total_votes > 0 else 0.5
+            weight_asset2 = votes_asset2 / total_votes if total_votes > 0 else 0.5
+            
+            trading_signals.append({
+                'signal_date': decision_date,
+                'trading_date': trading_date,
+                'asset1_weight': weight_asset1,
+                'asset2_weight': weight_asset2,
+                'asset1_votes': votes_asset1,
+                'asset2_votes': votes_asset2,
+                'total_votes': total_votes,
+                'asset1_name': asset1_name,
+                'asset2_name': asset2_name
+            })
+        
+        if not trading_signals:
+            print("警告: 没有生成任何交易信号")
+            return {}
+        
+        trading_signals_df = pd.DataFrame(trading_signals)
+        print(f"生成按比例分配交易信号: {len(trading_signals_df)} 个")
+        
+        # 显示权重分布统计
+        avg_weight1 = trading_signals_df['asset1_weight'].mean()
+        avg_weight2 = trading_signals_df['asset2_weight'].mean()
+        print(f"平均权重分配: {asset1_name} {avg_weight1:.1%}, {asset2_name} {avg_weight2:.1%}")
+        
+        # 计算净值基准日期
+        nav_base_date = pd.Timestamp('2013-01-04')
+        
+        # 如果基准日期不存在，找到最接近的交易日
+        if nav_base_date not in price_data_filtered.index:
+            available_dates = price_data_filtered.index[price_data_filtered.index >= nav_base_date]
+            if len(available_dates) > 0:
+                nav_base_date = available_dates[0]
+            else:
+                nav_base_date = price_data_filtered.index[0]
+        
+        print(f"净值基准日期: {nav_base_date.strftime('%Y-%m-%d')}")
+        
+        # 使用新的按比例净值计算方法
+        nav_results = self.calculate_nav_curves_by_proportional_shares(
+            trading_signals_df, price_data_filtered, strategy_type, nav_base_date
+        )
+        
+        strategy_nav = nav_results['strategy_nav']
+        benchmark_nav = nav_results['benchmark_nav']
+        
+        # 基于净值计算收益率
+        strategy_returns_from_nav = strategy_nav.pct_change().dropna()
+        benchmark_returns_from_nav = benchmark_nav.pct_change().dropna()
+        
+        print(f"基于净值计算的收益序列长度: 策略{len(strategy_returns_from_nav)}, 基准{len(benchmark_returns_from_nav)}")
+        
+        # 计算增强的绩效指标
+        enhanced_metrics = self.calculate_enhanced_performance_metrics(
+            strategy_returns_from_nav, benchmark_returns_from_nav
+        )
+        
+        # 编译结果
+        results = {
+            'strategy_type': strategy_type,
+            'backtest_mode': 'proportional',  # 标记为比例回测
+            'trading_signals': trading_signals_df,
+            'strategy_returns': strategy_returns_from_nav,
+            'benchmark_returns': benchmark_returns_from_nav,
+            'strategy_nav': strategy_nav,
+            'benchmark_nav': benchmark_nav,
+            'nav_base_date': nav_base_date,
+            'enhanced_metrics': enhanced_metrics,
+            'voting_decisions': voting_decisions
+        }
+        
+        print(f"\n=== {strategy_type} 按比例回测结果摘要 ===")
+        self.print_enhanced_performance_report(enhanced_metrics, strategy_type)
+        
+        return results
+
+    def calculate_nav_curves_by_proportional_shares(self,
+                                                    trading_signals_df: pd.DataFrame,
+                                                    price_data: pd.DataFrame,
+                                                    strategy_type: str,
+                                                    nav_base_date: pd.Timestamp) -> Dict:
+        """
+        基于投票比例分配计算净值曲线
+        
+        参数:
+            trading_signals_df: 包含投票比例的交易信号数据
+            price_data: 价格数据
+            strategy_type: 策略类型
+            nav_base_date: 净值基准日期（2013-01-04）
+            
+        返回:
+            包含策略和基准净值序列的字典
+        """
+        # 确定资产列名
+        if strategy_type == 'value_growth':
+            asset1_col, asset2_col = 'ValueR', 'GrowthR'
+            asset1_name, asset2_name = 'Value', 'Growth'
+        elif strategy_type == 'big_small':
+            asset1_col, asset2_col = 'BigR', 'SmallR'
+            asset1_name, asset2_name = 'Big', 'Small'
+        else:
+            raise ValueError(f"不支持的策略类型: {strategy_type}")
+        
+        # 获取净值计算期间的价格数据
+        nav_price_data = price_data.loc[nav_base_date:].copy()
+        
+        if nav_price_data.empty:
+            raise ValueError(f"净值基准日期 {nav_base_date} 之后没有价格数据")
+        
+        # 基准日期的价格（用于计算初始份额）
+        base_price_asset1 = nav_price_data.iloc[0][asset1_col]
+        base_price_asset2 = nav_price_data.iloc[0][asset2_col]
+        
+        print(f"净值基准日期: {nav_base_date.strftime('%Y-%m-%d')}")
+        print(f"基准日价格: {asset1_col}={base_price_asset1:.4f}, {asset2_col}={base_price_asset2:.4f}")
+        
+        # 初始化净值序列
+        strategy_nav = pd.Series(index=nav_price_data.index, dtype=float)
+        benchmark_nav = pd.Series(index=nav_price_data.index, dtype=float)
+        
+        # 基准日期净值设为1.0
+        strategy_nav.iloc[0] = 1.0
+        benchmark_nav.iloc[0] = 1.0
+        
+        # 基准投资组合：始终50%+50%
+        benchmark_shares_asset1 = 0.5 / base_price_asset1  # 基准50%资金购买asset1的份额
+        benchmark_shares_asset2 = 0.5 / base_price_asset2  # 基准50%资金购买asset2的份额
+        
+        # 生成基准再平衡日期（每月第一个交易日）
+        rebalance_dates = pd.date_range(start=nav_base_date, end=nav_price_data.index[-1], freq='MS')  # 每月第一天
+        rebalance_dates = rebalance_dates[rebalance_dates.isin(nav_price_data.index)]  # 只保留实际交易日
+        
+        print(f"基准再平衡日期数量: {len(rebalance_dates)}")
+        if len(rebalance_dates) > 0:
+            print(f"再平衡日期范围: {rebalance_dates[0].strftime('%Y-%m-%d')} ~ {rebalance_dates[-1].strftime('%Y-%m-%d')}")
+        
+        # 策略初始持仓：根据第一个有效信号的比例决定
+        valid_signals = trading_signals_df[
+            (trading_signals_df['trading_date'].notna()) & 
+            (trading_signals_df['trading_date'] >= nav_base_date)
+        ].sort_values('trading_date')
+        
+        # 确定策略初始持仓比例
+        if not valid_signals.empty:
+            first_signal = valid_signals.iloc[0]
+            weight1 = first_signal['asset1_weight']
+            weight2 = first_signal['asset2_weight']
+            
+            # 根据比例分配初始1元资金
+            strategy_shares_asset1 = weight1 / base_price_asset1
+            strategy_shares_asset2 = weight2 / base_price_asset2
+            
+            print(f"策略初始持仓: {asset1_name} {weight1:.1%}, {asset2_name} {weight2:.1%}")
+        else:
+            # 如果没有有效信号，默认50%+50%分配
+            strategy_shares_asset1 = 0.5 / base_price_asset1
+            strategy_shares_asset2 = 0.5 / base_price_asset2
+            print(f"策略初始持仓: {asset1_name} 50%, {asset2_name} 50% (无信号默认)")
+        
+        # 逐日计算净值
+        rebalance_count = 0
+        strategy_rebalance_count = 0
+        
+        for i in range(1, len(nav_price_data)):
+            current_date = nav_price_data.index[i]
+            current_price_asset1 = nav_price_data.iloc[i][asset1_col]
+            current_price_asset2 = nav_price_data.iloc[i][asset2_col]
+            
+            # 检查基准是否需要再平衡（每月第一个交易日）
+            if current_date in rebalance_dates:
+                # 计算再平衡前的基准净值
+                current_benchmark_nav_value = (benchmark_shares_asset1 * current_price_asset1 + 
+                                             benchmark_shares_asset2 * current_price_asset2)
+                
+                # 重新平衡为50%+50%
+                benchmark_shares_asset1 = (current_benchmark_nav_value * 0.5) / current_price_asset1
+                benchmark_shares_asset2 = (current_benchmark_nav_value * 0.5) / current_price_asset2
+                
+                rebalance_count += 1
+                if rebalance_count <= 3:  # 只打印前3次再平衡详情
+                    print(f"基准再平衡 {current_date.strftime('%Y-%m-%d')}: 净值={current_benchmark_nav_value:.4f}")
+            
+            # 检查策略是否有调仓信号
+            signals_on_date = valid_signals[valid_signals['trading_date'] == current_date]
+            
+            if not signals_on_date.empty:
+                # 有调仓信号：先计算调仓前的净值，然后按新比例调仓
+                prev_strategy_nav_value = (strategy_shares_asset1 * current_price_asset1 + 
+                                         strategy_shares_asset2 * current_price_asset2)
+                
+                # 获取新的投票比例信号
+                new_signal = signals_on_date.iloc[-1]  # 如果有多个信号取最后一个
+                new_weight1 = new_signal['asset1_weight']
+                new_weight2 = new_signal['asset2_weight']
+                
+                # 按新比例重新分配资金
+                strategy_shares_asset1 = (prev_strategy_nav_value * new_weight1) / current_price_asset1
+                strategy_shares_asset2 = (prev_strategy_nav_value * new_weight2) / current_price_asset2
+                
+                strategy_rebalance_count += 1
+                if strategy_rebalance_count <= 5:  # 打印前5次策略调仓详情
+                    print(f"策略调仓 {current_date.strftime('%Y-%m-%d')}: {asset1_name} {new_weight1:.1%}, {asset2_name} {new_weight2:.1%}")
+            
+            # 计算当日净值
+            strategy_nav_value = (strategy_shares_asset1 * current_price_asset1 + 
+                                strategy_shares_asset2 * current_price_asset2)
+            benchmark_nav_value = (benchmark_shares_asset1 * current_price_asset1 + 
+                                 benchmark_shares_asset2 * current_price_asset2)
+            
+            strategy_nav.iloc[i] = strategy_nav_value
+            benchmark_nav.iloc[i] = benchmark_nav_value
+        
+        print(f"总共执行基准再平衡: {rebalance_count} 次")
+        print(f"总共执行策略调仓: {strategy_rebalance_count} 次")
+        
+        return {
+            'strategy_nav': strategy_nav,
+            'benchmark_nav': benchmark_nav,
+            'strategy_shares_asset1': strategy_shares_asset1,
+            'strategy_shares_asset2': strategy_shares_asset2,
+            'benchmark_shares_asset1': benchmark_shares_asset1,
+            'benchmark_shares_asset2': benchmark_shares_asset2
         } 

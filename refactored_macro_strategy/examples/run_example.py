@@ -807,8 +807,8 @@ def run_both_voting_strategies(data_path):
         if results:
             print(f"\n=== 多信号投票策略分析完成 ===")
             for strategy_type, strategy_results in results.items():
-                if strategy_results and 'strategy_metrics' in strategy_results:
-                    metrics = strategy_results['strategy_metrics']
+                if strategy_results and 'enhanced_metrics' in strategy_results:
+                    metrics = strategy_results['enhanced_metrics']['strategy_metrics']
                     print(f"{strategy_type.upper()} 策略年化收益: {metrics['annualized_return']:.2%}")
                     print(f"{strategy_type.upper()} 策略夏普比率: {metrics['sharpe_ratio']:.3f}")
         else:
@@ -834,8 +834,8 @@ def run_value_growth_voting_strategy(data_path):
     try:
         results = run_vg_strategy_impl(data_path)
         
-        if results and 'strategy_metrics' in results:
-            metrics = results['strategy_metrics']
+        if results and 'enhanced_metrics' in results:
+            metrics = results['enhanced_metrics']['strategy_metrics']
             print(f"\n=== 价值成长投票策略完成 ===")
             print(f"策略年化收益: {metrics['annualized_return']:.2%}")
             print(f"策略夏普比率: {metrics['sharpe_ratio']:.3f}")
@@ -863,8 +863,8 @@ def run_big_small_voting_strategy(data_path):
     try:
         results = run_bs_strategy_impl(data_path)
         
-        if results and 'strategy_metrics' in results:
-            metrics = results['strategy_metrics']
+        if results and 'enhanced_metrics' in results:
+            metrics = results['enhanced_metrics']['strategy_metrics']
             print(f"\n=== 大小盘投票策略完成 ===")
             print(f"策略年化收益: {metrics['annualized_return']:.2%}")
             print(f"策略夏普比率: {metrics['sharpe_ratio']:.3f}")
@@ -874,6 +874,98 @@ def run_big_small_voting_strategy(data_path):
     
     except Exception as e:
         print(f"大小盘投票策略分析失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def run_value_growth_proportional_voting_strategy(data_path):
+    """运行价值成长按比例分配多信号投票策略"""
+    from refactored_macro_strategy.workflows.multi_signal_workflow import run_value_growth_proportional_voting_strategy as run_vg_prop_strategy_impl
+    
+    print("="*80)
+    print("价值成长按比例分配多信号投票策略")
+    print("="*80)
+    print("基于13个宏观信号的价值成长轮动策略")
+    print("投票机制: 按投票比例分配持仓权重")
+    print("回测标的: ValueR vs GrowthR")
+    print("示例: 价值9票，成长4票 → 价值69.2%，成长30.8%")
+    
+    try:
+        results = run_vg_prop_strategy_impl(data_path)
+        
+        if results and 'enhanced_metrics' in results:
+            metrics = results['enhanced_metrics']['strategy_metrics']
+            print(f"\n=== 价值成长按比例投票策略完成 ===")
+            print(f"策略年化收益: {metrics['annualized_return']:.2%}")
+            print(f"策略夏普比率: {metrics['sharpe_ratio']:.3f}")
+            print(f"输出文件: 详见signal_test_results目录")
+        else:
+            print("价值成长按比例投票策略分析未产生有效结果")
+    
+    except Exception as e:
+        print(f"价值成长按比例投票策略分析失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def run_big_small_proportional_voting_strategy(data_path):
+    """运行大小盘按比例分配多信号投票策略"""
+    from refactored_macro_strategy.workflows.multi_signal_workflow import run_big_small_proportional_voting_strategy as run_bs_prop_strategy_impl
+    
+    print("="*80)
+    print("大小盘按比例分配多信号投票策略")
+    print("="*80)
+    print("基于13个宏观信号的大小盘轮动策略")
+    print("投票机制: 按投票比例分配持仓权重")
+    print("回测标的: BigR vs SmallR")
+    print("示例: 大盘7票，小盘6票 → 大盘53.8%，小盘46.2%")
+    
+    try:
+        results = run_bs_prop_strategy_impl(data_path)
+        
+        if results and 'enhanced_metrics' in results:
+            metrics = results['enhanced_metrics']['strategy_metrics']
+            print(f"\n=== 大小盘按比例投票策略完成 ===")
+            print(f"策略年化收益: {metrics['annualized_return']:.2%}")
+            print(f"策略夏普比率: {metrics['sharpe_ratio']:.3f}")
+            print(f"输出文件: 详见signal_test_results目录")
+        else:
+            print("大小盘按比例投票策略分析未产生有效结果")
+    
+    except Exception as e:
+        print(f"大小盘按比例投票策略分析失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def run_both_proportional_voting_strategies(data_path):
+    """运行按比例分配多信号投票策略 - 价值成长 & 大小盘"""
+    from refactored_macro_strategy.workflows.multi_signal_workflow import run_both_proportional_voting_strategies as run_both_prop_strategies_impl
+    
+    print("="*80)
+    print("按比例分配多信号投票策略")
+    print("="*80)
+    print("基于13个宏观信号的投票决策")
+    print("策略类型: 价值成长轮动 & 大小盘轮动")
+    print("投票机制: 按投票比例分配持仓权重")
+    print("回测模式: 按投票比例配置策略")
+    print("基准: 50% + 50% 月度再平衡")
+    
+    try:
+        results = run_both_prop_strategies_impl(data_path)
+        
+        if results:
+            print(f"\n=== 按比例分配投票策略分析完成 ===")
+            for strategy_type, strategy_results in results.items():
+                if strategy_results and 'enhanced_metrics' in strategy_results:
+                    metrics = strategy_results['enhanced_metrics']['strategy_metrics']
+                    print(f"{strategy_type.upper()} 策略年化收益: {metrics['annualized_return']:.2%}")
+                    print(f"{strategy_type.upper()} 策略夏普比率: {metrics['sharpe_ratio']:.3f}")
+        else:
+            print("按比例分配投票策略分析未产生有效结果")
+    
+    except Exception as e:
+        print(f"按比例分配投票策略分析失败: {e}")
         import traceback
         traceback.print_exc()
 
@@ -897,7 +989,10 @@ def main():
         '11': ('价值成长稳定性重新分析', run_value_growth_stability_reanalysis),  # 专门的价值成长重新分析
         '12': ('多信号投票策略', run_both_voting_strategies),
         '13': ('价值成长多信号投票策略', run_value_growth_voting_strategy),
-        '14': ('大小盘多信号投票策略', run_big_small_voting_strategy)
+        '14': ('大小盘多信号投票策略', run_big_small_voting_strategy),
+        '15': ('按比例分配多信号投票策略', run_both_proportional_voting_strategies),
+        '16': ('价值成长按比例投票策略', run_value_growth_proportional_voting_strategy),
+        '17': ('大小盘按比例投票策略', run_big_small_proportional_voting_strategy)
     }
     
     print("可用示例:")

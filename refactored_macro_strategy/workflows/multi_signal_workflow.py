@@ -121,6 +121,100 @@ class MultiSignalVotingWorkflow:
         print(f"\n=== {strategy_type} 多信号投票策略完成 ===")
         return complete_results
     
+    def run_complete_proportional_voting_strategy(self, 
+                                                  data_path: str,
+                                                  strategy_type: str,
+                                                  start_date: str = '2013-01-01',
+                                                  end_date: str = '2025-05-27',
+                                                  custom_signals: Optional[List[Dict]] = None) -> Dict:
+        """
+        运行完整的按比例分配多信号投票策略
+        
+        参数:
+            data_path: 数据文件路径
+            strategy_type: 策略类型 ('value_growth' 或 'big_small')
+            start_date: 回测开始日期
+            end_date: 回测结束日期
+            custom_signals: 自定义信号配置（可选）
+            
+        返回:
+            完整的分析结果
+        """
+        print("="*80)
+        print(f"多信号投票策略 (按比例分配) - {strategy_type.upper()}")
+        print("="*80)
+        
+        # 1. 加载数据
+        try:
+            data_dict = load_all_data(data_path)
+            indicator_data = data_dict['indicator_data']
+            price_data = data_dict['price_data']
+            print(f"数据加载成功:")
+            print(f"  宏观指标数据: {indicator_data.shape}")
+            print(f"  价格数据: {price_data.shape}")
+        except Exception as e:
+            print(f"数据加载失败: {e}")
+            return {}
+        
+        # 2. 获取信号配置
+        if custom_signals:
+            signal_configs = custom_signals
+            print(f"使用自定义信号配置: {len(signal_configs)} 个信号")
+        else:
+            all_configs = self.signal_configuration.load_default_configurations()
+            signal_configs = all_configs.get(strategy_type, [])
+            print(f"使用默认信号配置: {len(signal_configs)} 个信号")
+        
+        if not signal_configs:
+            print(f"错误: 没有找到 {strategy_type} 策略的信号配置")
+            return {}
+        
+        # 3. 生成投票信号
+        voting_signals = self.voting_engine.generate_voting_signals(
+            indicator_data, signal_configs, strategy_type, signal_start_date='2012-11-01'
+        )
+        
+        if voting_signals.empty:
+            print("错误: 投票信号生成失败")
+            return {}
+        
+        # 4. 计算投票决策
+        voting_decisions = self.voting_engine.calculate_voting_decisions(
+            voting_signals, strategy_type
+        )
+        
+        if voting_decisions.empty:
+            print("错误: 投票决策计算失败")
+            return {}
+        
+        # 5. 运行按比例分配回测
+        backtest_results = self.backtest_engine.run_voting_backtest_proportional(
+            voting_decisions, price_data, strategy_type, start_date, end_date
+        )
+        
+        if not backtest_results:
+            print("错误: 按比例回测运行失败")
+            return {}
+        
+        # 6. 导出结果
+        try:
+            self._export_results(backtest_results, strategy_type, mode_suffix='proportional')
+        except Exception as e:
+            print(f"结果导出失败: {e}")
+        
+        # 7. 综合结果
+        complete_results = {
+            'strategy_type': strategy_type,
+            'backtest_mode': 'proportional',
+            'signal_configs': signal_configs,
+            'voting_signals': voting_signals,
+            'voting_decisions': voting_decisions,
+            **backtest_results
+        }
+        
+        print(f"\n=== {strategy_type} 按比例分配投票策略完成 ===")
+        return complete_results
+    
     def run_both_strategies(self, 
                            data_path: str,
                            start_date: str = '2013-01-01',
@@ -172,10 +266,10 @@ class MultiSignalVotingWorkflow:
         
         return all_results
     
-    def _export_results(self, results: Dict, strategy_type: str) -> None:
+    def _export_results(self, results: Dict, strategy_type: str, mode_suffix: str = '') -> None:
         """导出分析结果到Excel"""
         timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
-        output_file = f"signal_test_results/multi_signal_voting_{strategy_type}_{timestamp}.xlsx"
+        output_file = f"signal_test_results/multi_signal_voting_{strategy_type}_{mode_suffix}_{timestamp}.xlsx"
         
         # 确保输出目录存在
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
@@ -206,14 +300,29 @@ class MultiSignalVotingWorkflow:
                         lambda x: x.strftime('%Y-%m-%d') if pd.notna(x) else ''
                     )
                     
-                    # 重命名列为中文
-                    trading_signals_export = trading_signals_export.rename(columns={
-                        'signal_date': '信号日期',
-                        'trading_date': '交易日期', 
-                        'target_asset': '目标资产',
-                        'winning_direction': '获胜方向',
-                        'vote_confidence': '投票信心度'
-                    })
+                    # 根据回测模式决定列名映射
+                    if results.get('backtest_mode') == 'proportional':
+                        # 按比例分配模式的列名映射
+                        trading_signals_export = trading_signals_export.rename(columns={
+                            'signal_date': '信号日期',
+                            'trading_date': '交易日期', 
+                            'asset1_weight': '第一资产权重',
+                            'asset2_weight': '第二资产权重',
+                            'asset1_votes': '第一资产票数',
+                            'asset2_votes': '第二资产票数',
+                            'total_votes': '总票数',
+                            'asset1_name': '第一资产名称',
+                            'asset2_name': '第二资产名称'
+                        })
+                    else:
+                        # 传统获胜者全拿模式的列名映射
+                        trading_signals_export = trading_signals_export.rename(columns={
+                            'signal_date': '信号日期',
+                            'trading_date': '交易日期', 
+                            'target_asset': '目标资产',
+                            'winning_direction': '获胜方向',
+                            'vote_confidence': '投票信心度'
+                        })
                     
                     trading_signals_export.to_excel(writer, sheet_name='交易信号', index=False)
                     print("  ✓ 交易信号导出成功")
@@ -377,4 +486,47 @@ def run_big_small_voting_strategy(data_path: str) -> Dict:
 def run_both_voting_strategies(data_path: str) -> Dict[str, Dict]:
     """同时运行两个投票策略"""
     workflow = MultiSignalVotingWorkflow()
-    return workflow.run_both_strategies(data_path) 
+    return workflow.run_both_strategies(data_path)
+
+
+def run_value_growth_proportional_voting_strategy(data_path: str) -> Dict:
+    """运行价值成长按比例分配多信号投票策略"""
+    workflow = MultiSignalVotingWorkflow()
+    return workflow.run_complete_proportional_voting_strategy(data_path, 'value_growth')
+
+
+def run_big_small_proportional_voting_strategy(data_path: str) -> Dict:
+    """运行大小盘按比例分配多信号投票策略"""
+    workflow = MultiSignalVotingWorkflow()
+    return workflow.run_complete_proportional_voting_strategy(data_path, 'big_small')
+
+
+def run_both_proportional_voting_strategies(data_path: str) -> Dict[str, Dict]:
+    """同时运行两个按比例分配投票策略"""
+    workflow = MultiSignalVotingWorkflow()
+    
+    all_results = {}
+    
+    # 运行价值成长比例策略
+    try:
+        print("\n>>> 开始价值成长比例策略分析 <<<")
+        value_growth_results = workflow.run_complete_proportional_voting_strategy(
+            data_path, 'value_growth'
+        )
+        all_results['value_growth_proportional'] = value_growth_results
+    except Exception as e:
+        print(f"价值成长比例策略运行失败: {e}")
+        all_results['value_growth_proportional'] = {}
+    
+    # 运行大小盘比例策略
+    try:
+        print("\n>>> 开始大小盘比例策略分析 <<<")
+        big_small_results = workflow.run_complete_proportional_voting_strategy(
+            data_path, 'big_small'
+        )
+        all_results['big_small_proportional'] = big_small_results
+    except Exception as e:
+        print(f"大小盘比例策略运行失败: {e}")
+        all_results['big_small_proportional'] = {}
+    
+    return all_results 
