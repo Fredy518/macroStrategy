@@ -1,10 +1,10 @@
-# 重构后的宏观策略系统
+# 重构后的宏观策略系统 - 技术文档
 
 ## 概述
 
-这是原有宏观策略系统的精简重构版本，专注于消除代码重复、提高模块化程度，并简化使用流程。
+这是原有宏观策略系统的精简重构版本，专注于消除代码重复、提高模块化程度，并简化使用流程。本文档主要面向开发者和技术用户，详细介绍系统的技术实现。
 
-## 主要改进
+## 重构目标与成果
 
 ### 1. 立即可精简的功能点
 
@@ -58,7 +58,79 @@ refactored_macro_strategy/
 | 结果处理 | ~分散在多文件 | ~200行 | - |
 | 总体 | ~2000+行 | ~850行 | 58% |
 
-## 快速开始
+## 技术实现细节
+
+### 1. 统一的配置管理
+
+```python
+# config/signal_config.py
+class SignalConfig:
+    def __init__(self):
+        self.TEST_PARAMS = {
+            'historical_high': [6, 12, 24],
+            'marginal_improvement': [3, 6]
+        }
+        self.INDICATORS = ['CPI_yoy', 'M1_yoy', 'GDP_yoy']
+        
+# config/backtest_config.py  
+class BacktestConfig:
+    def __init__(self):
+        self.enable_parallel = True
+        self.num_processes = 4
+        self.chunk_size = 100
+```
+
+### 2. 核心引擎架构
+
+#### 信号生成引擎 (SignalEngine)
+```python
+class SignalEngine:
+    def __init__(self, config: SignalConfig):
+        self.config = config
+        
+    def generate_signals(self, data, indicator, signal_type, params):
+        """统一的信号生成接口"""
+        if signal_type == 'historical_high':
+            return self._historical_high_signal(data, indicator, params)
+        elif signal_type == 'marginal_improvement':
+            return self._marginal_improvement_signal(data, indicator, params)
+```
+
+#### 回测引擎 (BacktestEngine)
+```python
+class BacktestEngine:
+    def __init__(self, config: BacktestConfig):
+        self.config = config
+        
+    def run_backtest(self, signals, returns_data):
+        """智能选择串行或并行处理"""
+        if self.config.enable_parallel and len(signals) > self.config.chunk_size:
+            return self._parallel_backtest(signals, returns_data)
+        else:
+            return self._serial_backtest(signals, returns_data)
+```
+
+### 3. 数据验证框架
+
+```python
+# utils/validators.py
+class DataValidator:
+    @staticmethod
+    def validate_macro_data(data):
+        """验证宏观数据格式"""
+        required_columns = ['ValueR', 'GrowthR']
+        missing_columns = [col for col in required_columns if col not in data.columns]
+        if missing_columns:
+            raise ValueError(f"缺少必要列: {missing_columns}")
+            
+    @staticmethod
+    def validate_signal_params(signal_type, params):
+        """验证信号参数"""
+        if signal_type == 'historical_high' and not isinstance(params, int):
+            raise ValueError("历史高点参数必须为整数")
+```
+
+## API 使用指南
 
 ### 1. 基础使用
 
@@ -98,94 +170,180 @@ workflow = MainWorkflow(
 )
 ```
 
-### 3. 快速测试
+### 3. 分步执行
+
+```python
+# 分步执行工作流
+workflow = MainWorkflow()
+
+# 步骤1: 生成信号
+signals = workflow.generate_all_signals(data_path="宏观指标与逻辑.xlsx")
+
+# 步骤2: 运行回测
+backtest_results = workflow.run_backtest(signals)
+
+# 步骤3: 处理结果
+final_results = workflow.process_results(backtest_results)
+```
+
+### 4. 快速测试模式
 
 ```python
 # 快速测试部分指标和信号
 results = workflow.quick_test(
     data_path="宏观指标与逻辑.xlsx",
     sample_indicators=['CPI_yoy', 'M1_yoy'],
-    sample_signal_types=['historical_high']
+    sample_signal_types=['historical_high'],
+    max_combinations=50  # 限制测试组合数量
 )
 ```
 
-## 主要特性
+## 性能优化
 
-### 1. 统一的配置管理
-- 所有配置参数集中管理
-- 支持默认配置和自定义配置
-- 配置与业务逻辑完全分离
+### 1. 内存管理
+- 使用生成器模式处理大数据集
+- 及时释放不需要的中间结果
+- 分块处理避免内存溢出
 
-### 2. 智能的处理模式
-- 自动选择串行或并行处理
-- 统一的双向测试逻辑
-- 智能的错误处理和恢复
+### 2. 并行处理
+- 自动检测系统资源选择最优进程数
+- 智能任务分割和负载均衡
+- 异常处理和进程恢复机制
 
-### 3. 精简的结果分析
-- 一键筛选最佳显著组合
-- 自动生成对比分析
-- 标准化的Excel导出格式
+### 3. 缓存机制
+- 信号计算结果缓存
+- 数据预处理结果缓存
+- 配置文件缓存
 
-### 4. 灵活的工作流程
-- 支持完整流程和分步执行
-- 内置快速测试模式
-- 可配置的并行处理
+## 错误处理
 
-## 性能提升
+### 1. 数据验证错误
+```python
+try:
+    workflow = MainWorkflow()
+    results = workflow.run_complete_workflow(data_path="invalid_data.xlsx")
+except ValueError as e:
+    print(f"数据验证失败: {e}")
+except FileNotFoundError as e:
+    print(f"文件未找到: {e}")
+```
 
-| 指标 | 原版本 | 重构版本 | 提升 |
-|------|--------|----------|------|
-| 代码可读性 | 中等 | 高 | 显著提升 |
-| 配置灵活性 | 低 | 高 | 显著提升 |
-| 错误处理 | 分散 | 统一 | 显著提升 |
-| 内存使用 | 高 | 优化 | 约20%改善 |
-| 维护复杂度 | 高 | 低 | 显著降低 |
+### 2. 计算错误处理
+- 自动跳过无效的参数组合
+- 记录错误日志便于调试
+- 提供部分结果而非完全失败
 
-## 兼容性
+### 3. 并行处理错误
+- 进程异常自动重试
+- 降级到串行处理
+- 详细的错误报告
+
+## 扩展开发
+
+### 1. 添加新的信号类型
+
+```python
+# 在 core/signal_engine.py 中添加
+def _new_signal_type(self, data, indicator, params):
+    """新信号类型的实现"""
+    # 实现新的信号逻辑
+    return signals
+
+# 在信号生成方法中注册
+def generate_signals(self, data, indicator, signal_type, params):
+    if signal_type == 'new_signal_type':
+        return self._new_signal_type(data, indicator, params)
+```
+
+### 2. 自定义结果处理
+
+```python
+# 继承 ResultProcessor 类
+class CustomResultProcessor(ResultProcessor):
+    def custom_analysis(self, results):
+        """自定义分析逻辑"""
+        # 实现自定义分析
+        return processed_results
+```
+
+### 3. 添加新的导出格式
+
+```python
+# 在 core/result_processor.py 中扩展
+def export_to_json(self, results, filepath):
+    """导出为JSON格式"""
+    import json
+    with open(filepath, 'w') as f:
+        json.dump(results, f, indent=2)
+```
+
+## 测试框架
+
+### 1. 单元测试
+```python
+# tests/test_signal_engine.py
+import unittest
+from core.signal_engine import SignalEngine
+
+class TestSignalEngine(unittest.TestCase):
+    def test_historical_high_signal(self):
+        # 测试历史高点信号生成
+        pass
+```
+
+### 2. 集成测试
+```python
+# tests/test_workflow.py
+def test_complete_workflow():
+    """测试完整工作流程"""
+    workflow = MainWorkflow()
+    results = workflow.run_complete_workflow("test_data.xlsx")
+    assert results is not None
+```
+
+## 部署说明
+
+### 1. 生产环境配置
+```python
+# config/production_config.py
+class ProductionConfig(BacktestConfig):
+    def __init__(self):
+        super().__init__()
+        self.enable_parallel = True
+        self.num_processes = 16
+        self.log_level = 'INFO'
+```
+
+### 2. 监控和日志
+```python
+import logging
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('macro_strategy.log'),
+        logging.StreamHandler()
+    ]
+)
+```
+
+## 兼容性说明
 
 - 与原版本的数据格式完全兼容
 - 输出结果格式保持一致
 - 核心算法逻辑保持不变
 - 支持原版本的所有功能
 
-## 使用建议
-
-### 新用户
-- 直接使用 `examples/run_example.py` 中的示例
-- 从快速测试模式开始熟悉系统
-
-### 原版本用户
-- 原有的Excel数据文件可直接使用
-- 建议先运行快速测试验证兼容性
-- 根据需要调整配置参数
-
-### 开发者
-- 各模块高度解耦，便于扩展
-- 统一的接口设计，易于二次开发
-- 完整的错误处理机制
-
-## 核心原则
-
-1. **简化优于复杂** - 删除不必要的复杂性
-2. **模块化设计** - 每个组件职责单一明确
-3. **配置驱动** - 通过配置而非代码修改行为
-4. **向后兼容** - 保持与原版本的兼容性
-5. **性能优先** - 在保持功能的前提下优化性能
-
 ## 后续改进计划
 
-- [ ] 添加单元测试
-- [ ] 支持更多数据格式
-- [ ] 实现实时监控功能
-- [ ] 添加可视化界面
-- [ ] 支持云端部署
-
-## 注意事项
-
-1. 确保数据文件包含 `ValueR` 和 `GrowthR` 列
-2. 首次运行建议使用快速测试模式
-3. 并行处理时注意内存使用情况
-4. 定期检查输出目录的磁盘空间
+- [ ] 完善单元测试覆盖率
+- [ ] 添加实时数据接口
+- [ ] 实现Web界面
+- [ ] 支持更多信号类型
+- [ ] 添加机器学习模型
+- [ ] 云端部署支持
 
 ---
 
