@@ -16,6 +16,9 @@
 - **🔬 回测引擎**: 完整的策略回测和性能评估系统
 - **📈 结果分析**: 自动化的结果分析和可视化输出
 - **⚙️ 配置管理**: 灵活的参数配置和策略定制
+- **🎯 多信号投票**: 基于11个宏观事件的投票决策系统
+- **📊 敏感性分析**: 测试不同宏观事件数量下的策略稳定性
+- **🔍 稳定性评估**: 滚动回测和稳定性指标分析
 
 ## 🏗️ 项目结构
 
@@ -81,47 +84,27 @@ results = workflow.quick_test(
 )
 ```
 
-## 📊 系统特性
-
-### 重构优势
-
-| 特性 | 原版本 | 重构版本 | 改进 |
-|------|--------|----------|------|
-| 代码量 | 2000+行 | 850行 | ⬇️ 58% |
-| 模块化程度 | 低 | 高 | ⬆️ 90% |
-| 配置灵活性 | 硬编码 | 配置驱动 | ⬆️ 100% |
-| 维护复杂度 | 高 | 低 | ⬇️ 70% |
-
-### 核心改进
-
-- ✅ **统一双向测试逻辑**: 消除串行和并行回测的代码重复
-- ✅ **模块化架构**: 清晰的职责分离和接口设计
-- ✅ **配置驱动**: 所有参数可通过配置文件灵活调整
-- ✅ **智能处理**: 自动选择最优的处理模式
-- ✅ **向后兼容**: 完全兼容原有数据格式和算法
-
-## 🔧 配置说明
-
-### 信号配置
+### 敏感性测试
 
 ```python
-from refactored_macro_strategy.config import SignalConfig
+# 运行宏观事件数量敏感性测试
+from refactored_macro_strategy.workflows.sensitivity_analysis import run_both_strategies_sensitivity_test
 
-signal_config = SignalConfig()
-signal_config.TEST_PARAMS = {
-    'historical_high': [6, 12, 24],  # 历史高点参数
-    'marginal_improvement': [3, 6]   # 边际改善参数
-}
+# 测试不同信号数量下的策略表现
+results = run_both_strategies_sensitivity_test(
+    data_path="宏观指标与逻辑.xlsx",
+    signal_counts=[5, 7, 9, 11, 13]  # 测试前5/7/9/11/13个宏观事件
+)
 ```
 
-### 回测配置
+### 多信号投票策略
 
 ```python
-from refactored_macro_strategy.config import BacktestConfig
+# 运行多信号投票策略
+from refactored_macro_strategy.workflows.multi_signal_workflow import run_both_voting_strategies
 
-backtest_config = BacktestConfig()
-backtest_config.enable_parallel = True    # 启用并行处理
-backtest_config.num_processes = 8         # 进程数量
+# 基于11个宏观事件的投票决策
+results = run_both_voting_strategies("宏观指标与逻辑.xlsx")
 ```
 
 ## 📈 使用示例
@@ -130,6 +113,9 @@ backtest_config.num_processes = 8         # 进程数量
 - [基础示例](refactored_macro_strategy/examples/run_example.py)
 - [稳定性分析](refactored_macro_strategy/examples/reanalyze_stability.py)
 - [配置指南](refactored_macro_strategy/VALUE_GROWTH_vs_BIG_SMALL_GUIDE.md)
+- [敏感性测试快速入门](refactored_macro_strategy/SENSITIVITY_QUICK_START.md)
+- [敏感性分析详细指南](refactored_macro_strategy/SENSITIVITY_ANALYSIS_GUIDE.md)
+- [多信号投票策略示例](refactored_macro_strategy/examples/sensitivity_test_example.py)
 
 ## 📋 数据格式
 

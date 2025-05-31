@@ -24,7 +24,7 @@ class MultiSignalVotingWorkflow:
     
     def __init__(self, signal_config: Optional[SignalConfig] = None):
         self.signal_config = signal_config or SignalConfig()
-        self.signal_configuration = SignalConfiguration()
+        self.signal_configuration = SignalConfiguration(self.signal_config)
         self.voting_engine = MultiSignalVotingEngine(self.signal_config)
         self.backtest_engine = MultiSignalBacktestEngine()
     

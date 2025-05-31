@@ -17,15 +17,14 @@ from ..config.signal_config import SignalConfig
 
 
 class SignalConfiguration:
-    """信号配置管理器"""
+    """信号配置管理器 - 重构为使用统一的SignalConfig"""
     
-    def __init__(self):
-        self.value_growth_signals = []
-        self.big_small_signals = []
+    def __init__(self, signal_config: Optional[SignalConfig] = None):
+        self.signal_config = signal_config or SignalConfig()
     
     def parse_signal_config_text(self, config_text: str) -> Dict[str, List[Dict]]:
         """
-        解析用户提供的信号配置文本
+        解析用户提供的信号配置文本（保留向后兼容）
         
         参数:
             config_text: 包含信号配置的文本
@@ -66,7 +65,20 @@ class SignalConfiguration:
         return signals
     
     def load_default_configurations(self) -> Dict[str, List[Dict]]:
-        """加载默认的信号配置（您提供的配置）"""
+        """加载默认的信号配置（从统一的SignalConfig中读取）"""
+        print("使用统一配置系统加载投票策略信号...")
+        
+        # 从SignalConfig中获取配置
+        voting_strategies = self.signal_config.VOTING_STRATEGIES.copy()
+        
+        print(f"成功加载配置:")
+        for strategy_type, signals in voting_strategies.items():
+            print(f"  {strategy_type}: {len(signals)} 个信号")
+        
+        return voting_strategies
+    
+    def load_legacy_configurations(self) -> Dict[str, List[Dict]]:
+        """加载旧版硬编码配置（保留向后兼容）"""
         config_text = """value_growth	long_loan_newadded_MA12_yoy_exceed_expectation_3_-1	long_loan_newadded_MA12_yoy	exceed_expectation	3	-1
 value_growth	M2_M1_historical_new_high_3_1	M2_M1	historical_new_high	3	1
 value_growth	newstarts_area_yoy_historical_new_high_3_1	newstarts_area_yoy	historical_new_high	3	1
@@ -94,6 +106,7 @@ big_small	TSF_yoy_historical_new_high_3_-1	TSF_yoy	historical_new_high	3	-1
 big_small	CN_BOND_10Y_exceed_expectation_3_1	CN_BOND_10Y	exceed_expectation	3	1
 big_small	industrial_value_added_yoy_exceed_expectation_9_1	industrial_value_added_yoy	exceed_expectation	9	1"""
         
+        print("使用旧版硬编码配置...")
         return self.parse_signal_config_text(config_text)
 
 
@@ -103,7 +116,7 @@ class MultiSignalVotingEngine:
     def __init__(self, signal_config: Optional[SignalConfig] = None):
         self.signal_config = signal_config or SignalConfig()
         self.signal_engine = SignalEngine(self.signal_config)
-        self.signal_configuration = SignalConfiguration()
+        self.signal_configuration = SignalConfiguration(self.signal_config)
     
     def generate_voting_signals(self, 
                                data: pd.DataFrame,
